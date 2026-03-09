@@ -23,7 +23,7 @@ import anthropic
 from task_loader import SWETask
 
 MODEL = "claude-sonnet-4-5"
-MAX_TURNS = 30
+MAX_TURNS = 20
 MAX_TOKENS_PER_TURN = 4096
 
 # ---------------------------------------------------------------------------
@@ -296,4 +296,11 @@ class SWEAgent:
         msg = f"Fix the following issue in {task.repo}:\n\n{task.problem_statement}"
         if task.hints_text:
             msg += f"\n\nHints:\n{task.hints_text}"
+        if task.fail_to_pass:
+            k_expr = " or ".join(task.fail_to_pass[:5])
+            msg += (
+                f"\n\nVerification: your fix must make the following test(s) pass:\n"
+                + "\n".join(f"  - {t}" for t in task.fail_to_pass)
+                + f"\n\nRun them with: python -m pytest -k '{k_expr}' -x -q"
+            )
         return msg

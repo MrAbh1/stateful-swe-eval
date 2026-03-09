@@ -120,6 +120,19 @@ def _task_to_swebench_dict(task: SWETask) -> dict:
 # Lightweight local evaluation (no Docker — for smoke testing)
 # ---------------------------------------------------------------------------
 
+def _extract_test_files(test_patch: str) -> list[str]:
+    """Extract b/ file paths from a unified diff test_patch."""
+    import re
+    if not test_patch:
+        return []
+    paths = []
+    for line in test_patch.splitlines():
+        m = re.match(r'^diff --git a/(\S+) b/(\S+)', line)
+        if m:
+            paths.append(m.group(2))
+    return paths
+
+
 def run_local_evaluation(
     results: list[AgentResult],
     tasks: list[SWETask],
@@ -144,10 +157,10 @@ def run_local_evaluation(
             resolved[result.instance_id] = False
             continue
 
-        # Reset to base commit
-        subprocess.run(["git", "checkout", task.base_commit],
+        # Reset to base commit (discard any agent changes first)
+        subprocess.run(["git", "reset", "--hard", task.base_commit],
                        cwd=repo_dir, capture_output=True)
-        subprocess.run(["git", "reset", "--hard"],
+        subprocess.run(["git", "clean", "-fdx"],
                        cwd=repo_dir, capture_output=True)
 
         # Apply patch
@@ -180,10 +193,19 @@ def run_local_evaluation(
 
         # Run fail_to_pass tests
         if task.fail_to_pass:
-            test_ids = " ".join(task.fail_to_pass[:10])  # cap for speed
+            # Build -k expression matching any of the test function names
+            test_names = task.fail_to_pass[:10]  # cap for speed
+            k_expr = " or ".join(test_names)
+            # Extract test file paths from the test_patch diff headers
+            test_files = _extract_test_files(task.test_patch)
+            if test_files:
+                test_targets = " ".join(test_files)
+                cmd = f"python -m pytest {test_targets} -k '{k_expr}' -x -q 2>&1"
+            else:
+                cmd = f"python -m pytest -k '{k_expr}' -x -q 2>&1"
             test_run = subprocess.run(
-                f"python -m pytest {test_ids} -x -q 2>&1",
-                shell=True, cwd=repo_dir, capture_output=True, text=True, timeout=120
+                cmd, shell=True, cwd=repo_dir,
+                capture_output=True, text=True, timeout=180
             )
             resolved[result.instance_id] = test_run.returncode == 0
         else:

@@ -65,6 +65,8 @@ def parse_args():
                    help="Unique run identifier (default: timestamp)")
     p.add_argument("--report-only", action="store_true",
                    help="Skip agent execution, re-generate report from saved results")
+    p.add_argument("--re-eval", action="store_true",
+                   help="Re-run local evaluation on saved predictions (no agent, no Docker)")
     p.add_argument("--github-token", default=None,
                    help="GitHub token for git ingest (or set GITHUB_TOKEN env var)")
     return p.parse_args()
@@ -206,7 +208,59 @@ def main():
     github_token = args.github_token or os.environ.get("GITHUB_TOKEN", "")
     repos = args.repos or DEFAULT_REPOS
 
-    if not args.report_only:
+    if args.re_eval:
+        # Re-run local evaluation on saved predictions (no agent re-run)
+        print(f"\nRe-evaluating saved predictions for run {run_id} ...")
+        all_results = {}
+        tasks = None
+        for mode in args.mode:
+            pred_path = run_dir / f"predictions_{mode}.jsonl"
+            if not pred_path.exists():
+                print(f"  No predictions found for mode={mode}, skipping.")
+                continue
+            saved = _load_results(run_dir / f"results_{mode}.json")
+            if not saved:
+                print(f"  No saved results for mode={mode}, skipping.")
+                continue
+            # Load tasks for the instance IDs in this run
+            if tasks is None:
+                instance_ids = [r.instance_id for r in saved]
+                repo_set = list({iid.split("-")[0].replace("__", "/") for iid in instance_ids})
+                print(f"  Loading tasks for repos: {repo_set} ...")
+                tasks = load_tasks(repos=repo_set, max_tasks=100, min_issues_per_repo=1)
+                tasks = [t for t in tasks if t.instance_id in set(instance_ids)]
+            print(f"\n  Re-evaluating {len(saved)} predictions for mode={mode} ...")
+            with tempfile.TemporaryDirectory(prefix="swe-re-eval-") as repo_base:
+                # Re-checkout each repo at each task's base commit and apply the saved patch
+                from evaluate import run_local_evaluation as _rle
+                import json as _json
+                # Rebuild AgentResult from saved JSON with the original patches
+                pred_map = {}
+                with open(pred_path) as f:
+                    for line in f:
+                        p = _json.loads(line)
+                        pred_map[p["instance_id"]] = p.get("model_patch", "")
+                for r in saved:
+                    r.patch = pred_map.get(r.instance_id, "")
+                # Checkout repos
+                task_map = {t.instance_id: t for t in tasks}
+                for r in saved:
+                    task = task_map.get(r.instance_id)
+                    if not task:
+                        continue
+                    try:
+                        StatefulHarness.checkout_repo(task.repo, task.base_commit, repo_base)
+                    except Exception as e:
+                        print(f"    Checkout failed for {r.instance_id}: {e}")
+                resolved = _rle(saved, tasks, repo_base)
+                for r in saved:
+                    r.resolved = resolved.get(r.instance_id, False)
+                    status = "✓ RESOLVED" if r.resolved else "✗ failed"
+                    print(f"    {r.instance_id}: {status}")
+            # Save updated results
+            _save_results(saved, run_dir / f"results_{mode}.json")
+            all_results[mode] = saved
+    elif not args.report_only:
         # Load tasks
         print(f"\nLoading SWE-bench tasks (repos={repos}, max={args.tasks}) ...")
         tasks = load_tasks(
