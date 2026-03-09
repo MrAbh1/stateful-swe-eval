@@ -182,32 +182,41 @@ class StatefulHarness:
     def checkout_repo(repo: str, commit: str, target_dir: str | Path) -> Path:
         """
         Clone repo at a specific commit into target_dir.
+        Uses a blobless clone (--filter=blob:none) for speed — fetches all
+        history metadata but downloads file blobs on demand.
         Returns path to the repo root.
         """
         target = Path(target_dir) / repo.replace("/", "__")
+        url = f"https://github.com/{repo}.git"
+
         if target.exists():
-            # Reset to the required commit
+            # Wipe any leftover changes from the previous task BEFORE fetching
+            subprocess.run(["git", "reset", "--hard", "HEAD"],
+                           cwd=target, capture_output=True)
+            subprocess.run(["git", "clean", "-fdx"],
+                           cwd=target, capture_output=True)
             subprocess.run(
-                ["git", "checkout", commit],
-                cwd=target, check=True, capture_output=True
-            )
-            subprocess.run(
-                ["git", "reset", "--hard"],
-                cwd=target, check=True, capture_output=True
+                ["git", "fetch", "--filter=blob:none", "origin"],
+                cwd=target, capture_output=True
             )
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
-            url = f"https://github.com/{repo}.git"
             subprocess.run(
-                ["git", "clone", "--depth=1", url, str(target)],
+                ["git", "clone", "--filter=blob:none", url, str(target)],
                 check=True, capture_output=True
             )
-            subprocess.run(
-                ["git", "fetch", "--depth=1", "origin", commit],
-                cwd=target, check=True, capture_output=True
-            )
-            subprocess.run(
-                ["git", "checkout", commit],
-                cwd=target, check=True, capture_output=True
-            )
+
+        # Checkout the exact commit then do a final hard reset + clean
+        subprocess.run(
+            ["git", "checkout", commit],
+            cwd=target, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "reset", "--hard", commit],
+            cwd=target, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "clean", "-fdx"],
+            cwd=target, check=True, capture_output=True
+        )
         return target

@@ -99,19 +99,23 @@ def generate_report(all_results: dict[str, list[AgentResult]]) -> str:
     lines.append("  PER-REPO BREAKDOWN")
     lines.append("-" * 72)
 
-    # Collect all repos
+    # Collect all repos — instance_id format: "owner__repo-12345"
+    # repo key: "owner__repo" (double underscore)
     all_repos: set[str] = set()
     for results in all_results.values():
         for r in results:
-            repo = r.instance_id.rsplit("__", 1)[0].replace("__", "/") if "__" in r.instance_id else "unknown"
-            all_repos.add(repo)
+            # e.g. "django__django-10097" → repo_key = "django__django"
+            parts = r.instance_id.split("-")
+            repo_key = parts[0] if parts else r.instance_id
+            all_repos.add(repo_key)
 
-    for repo in sorted(all_repos):
-        lines.append(f"\n  {repo}")
+    for repo_key in sorted(all_repos):
+        display = repo_key.replace("__", "/")
+        lines.append(f"\n  {display}")
         for mode, results in all_results.items():
             repo_results = [
                 r for r in results
-                if r.instance_id.startswith(repo.replace("/", "__"))
+                if r.instance_id.startswith(repo_key + "-")
             ]
             if not repo_results:
                 continue

@@ -23,7 +23,7 @@ import anthropic
 from task_loader import SWETask
 
 MODEL = "claude-sonnet-4-5"
-MAX_TURNS = 30
+MAX_TURNS = 15
 MAX_TOKENS_PER_TURN = 4096
 
 # ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ TOOLS = [
 @dataclass
 class AgentResult:
     instance_id: str
-    patch: str                      # git diff output
+    patch: str = ""                 # git diff output
     resolved: Optional[bool] = None # filled in by evaluate.py
     input_tokens: int = 0
     output_tokens: int = 0
@@ -219,6 +219,8 @@ class SWEAgent:
         full = self.repo_path / path
         if not full.exists():
             return f"Error: {path} not found"
+        if full.is_dir():
+            return f"Error: {path} is a directory, not a file"
         content = full.read_text(errors="replace")
         if old_str not in content:
             return (

@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 from task_loader import load_tasks, group_by_repo
 from swe_agent import SWEAgent, AgentResult
