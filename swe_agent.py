@@ -207,6 +207,8 @@ class SWEAgent:
         full = self.repo_path / path
         if not full.exists():
             return f"Error: {path} not found"
+        if full.is_dir():
+            return f"Error: {path} is a directory. List its contents with bash: ls {path}"
         lines = full.read_text(errors="replace").splitlines()
         if start or end:
             s = (start or 1) - 1

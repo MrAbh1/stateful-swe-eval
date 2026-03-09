@@ -128,7 +128,11 @@ class StatefulHarness:
                 )
                 session_id = start.get("session_id")
                 context_string = start.get("context_string", "")
-                injected_ids = [s["id"] for s in start.get("sessions", [])]
+                injected_ids = [
+                    s.get("session_id", s.get("id", ""))
+                    for s in start.get("sessions", [])
+                    if isinstance(s, dict)
+                ]
                 if context_string:
                     print(f"  [stateful] warm context loaded ({len(injected_ids)} prior sessions)")
                 else:
@@ -168,7 +172,7 @@ class StatefulHarness:
                     context_session_ids=injected_ids,
                 )
                 print(f"  [stateful] session ended — "
-                      f"{len(end.get('key_terms_indexed', []))} terms indexed")
+                      f"{end.get('key_terms_indexed', 0)} terms indexed")
             except StatefulError as e:
                 print(f"  [stateful] session/end error: {e}")
 
