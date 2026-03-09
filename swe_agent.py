@@ -23,7 +23,7 @@ import anthropic
 from task_loader import SWETask
 
 MODEL = "claude-sonnet-4-5"
-MAX_TURNS = 15
+MAX_TURNS = 30
 MAX_TOKENS_PER_TURN = 4096
 
 # ---------------------------------------------------------------------------
@@ -74,6 +74,18 @@ TOOLS = [
                 "new_str": {"type": "string", "description": "Replacement string."},
             },
             "required": ["path", "old_str", "new_str"],
+        },
+    },
+    {
+        "name": "create_file",
+        "description": "Create a new file (or overwrite an existing one) with the given content.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Relative path from repo root."},
+                "content": {"type": "string", "description": "Full content to write to the file."},
+            },
+            "required": ["path", "content"],
         },
     },
 ]
@@ -184,6 +196,8 @@ class SWEAgent:
             )
         elif name == "edit_file":
             return self._edit_file(inputs["path"], inputs["old_str"], inputs["new_str"])
+        elif name == "create_file":
+            return self._create_file(inputs["path"], inputs["content"])
         return f"Unknown tool: {name}"
 
     def _bash(self, command: str) -> str:
@@ -231,6 +245,14 @@ class SWEAgent:
             )
         full.write_text(content.replace(old_str, new_str, 1))
         return f"Edited {path} successfully."
+
+    def _create_file(self, path: str, content: str) -> str:
+        full = self.repo_path / path
+        if full.is_dir():
+            return f"Error: {path} is a directory, not a file"
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text(content)
+        return f"Created {path} ({len(content)} bytes)."
 
     def _get_patch(self) -> str:
         try:
